@@ -2391,10 +2391,10 @@ void ActualizarControles() {
 
     MostrarControl(editRespuesta, texto);
     MostrarControl(btnComprobar, texto && !respondida);
-    MostrarControl(btnCharAE, texto);
-    MostrarControl(btnCharOE, texto);
-    MostrarControl(btnCharUE, texto);
-    MostrarControl(btnCharSS, texto);
+    MostrarControl(btnCharAE, texto && !respondida);
+    MostrarControl(btnCharOE, texto && !respondida);
+    MostrarControl(btnCharUE, texto && !respondida);
+    MostrarControl(btnCharSS, texto && !respondida);
 
     MostrarControl(btnTiempoPresente, configVerbos);
     MostrarControl(btnTiempoPreterito, configVerbos);
