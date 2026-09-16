@@ -1,38 +1,64 @@
 # DeutschCoach
 
-Proyecto en C++ para apoyar el aprendizaje de alemán mediante práctica de vocabulario, artículos y seguimiento de resultados.
+DeutschCoach es una aplicación en C++ para acompañar el aprendizaje de alemán desde nivel inicial. El objetivo es que el programa registre el rendimiento del usuario y, progresivamente, priorice aquello que más necesita repasar.
 
-## Versión actual
+## Versión actual: v0.2 GUI
 
-**v0.1**
+La versión actual ya es una **aplicación gráfica de Windows** y está pensada para compilarse con **Embarcadero Dev-C++ 6.3 / MinGW**.
 
-Incluye:
-- Menú principal por consola.
-- Práctica alemán → español.
-- Práctica español → alemán.
-- Práctica de artículos `der`, `die`, `das`.
-- Preguntas aleatorias.
-- Estadísticas de aciertos y errores durante la sesión.
+### Incluye
 
-## Cómo probarlo en Embarcadero C++Builder
+- Interfaz gráfica sin consola.
+- Pantalla principal visual.
+- Navegación lateral.
+- Nivel inicial A1.
+- Práctica de artículos `der`, `die`, `das` mediante botones.
+- Práctica de vocabulario mediante opciones múltiples.
+- Sesiones de 10 preguntas.
+- Repaso inteligente que prioriza palabras con más errores.
+- Estadísticas globales.
+- Racha actual y mejor racha.
+- Conteo de palabras dominadas.
+- Guardado automático del progreso entre sesiones.
 
-1. Descarga o clona este repositorio.
-2. Abre C++Builder.
-3. Crea un proyecto nuevo de tipo **Console Application - C++**.
-4. Reemplaza el contenido del archivo principal por el contenido de `DeutschCoach.cpp`.
-5. Compila y ejecuta.
+El progreso se guarda automáticamente en:
 
-> En esta primera versión evitamos componentes visuales para comprobar primero que la lógica funcione correctamente en tu instalación de C++Builder.
+`deutschcoach_progreso.txt`
 
-## Próximas etapas
+## Cómo abrirlo en Embarcadero Dev-C++ 6.3
 
-- v0.2: vocabulario cargado desde archivo.
-- v0.3: guardar progreso entre sesiones.
-- v0.4: dificultad por palabra.
-- v0.5: repaso inteligente según errores.
-- v0.6: verbos y conjugaciones.
-- v0.7: interfaz gráfica en C++Builder.
+1. Descargá el repositorio desde GitHub con **Code > Download ZIP**.
+2. Descomprimilo en una carpeta permanente, por ejemplo `C:\Proyectos\DeutschCoach`.
+3. Abrí **Embarcadero Dev-C++ 6.3**.
+4. Elegí **File > New > Project**.
+5. Seleccioná **Windows Application** y lenguaje **C++**.
+6. Poné como nombre del proyecto `DeutschCoach`.
+7. Dev-C++ va a crear un archivo fuente inicial. Reemplazá su contenido completo por el contenido de `DeutschCoachGUI.cpp`.
+8. Guardá.
+9. Usá **Execute > Compile & Run** (o F11 según la configuración del IDE).
+
+### Importante
+
+El proyecto debe ser de tipo **Windows Application**, no `Console Application`. De esa manera se abre directamente la ventana gráfica y no aparece una consola negra detrás.
+
+DeutschCoachGUI.cpp utiliza únicamente la API nativa de Windows y la biblioteca estándar de C++. No requiere instalar librerías gráficas externas.
+
+## Archivo anterior
+
+`DeutschCoach.cpp` corresponde a la v0.1 de consola y se mantiene solamente como referencia histórica. El desarrollo principal continúa en `DeutschCoachGUI.cpp`.
+
+## Próximas versiones
+
+- Vocabulario cargado desde archivos externos.
+- Estadísticas individuales por palabra más completas.
+- Sistema de niveles y experiencia.
+- Repaso espaciado según fecha y dificultad.
+- Verbos básicos y conjugaciones.
+- Frases y construcción de oraciones.
+- Nuevos temas A1 desbloqueables.
+- Configuración del perfil del estudiante.
+- Mejoras visuales y animaciones.
 
 ## Objetivo final
 
-DeutschCoach deberá detectar progresivamente qué palabras y temas generan más errores y priorizar su repaso, convirtiéndose en una herramienta de estudio personal en lugar de un cuestionario fijo.
+DeutschCoach deberá poder detectar qué palabras, artículos y temas generan más errores y construir sesiones de estudio adaptadas al usuario, convirtiéndose en una herramienta personal de aprendizaje de alemán y no solamente en un cuestionario fijo.
