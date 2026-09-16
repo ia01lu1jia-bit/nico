@@ -34,12 +34,22 @@ El progreso se guarda automáticamente en:
 5. Seleccioná **Windows Application** y lenguaje **C++**.
 6. Poné como nombre del proyecto `DeutschCoach`.
 7. Dev-C++ va a crear un archivo fuente inicial. Reemplazá su contenido completo por el contenido de `DeutschCoachGUI.cpp`.
-8. Guardá.
-9. Usá **Execute > Compile & Run** (o F11 según la configuración del IDE).
+8. Abrí **Project > Project Options > Parameters**.
+9. En el campo **Linker** agregá: `-lgdi32 -mwindows`
+10. Guardá el proyecto.
+11. Usá **Execute > Compile & Run** (o F11 según la configuración del IDE).
+
+### Si aparece `undefined reference` a SelectObject, CreateFontW, CreateSolidBrush, RoundRect, etc.
+
+Eso significa que falta enlazar la biblioteca gráfica de Windows. Confirmá que en las opciones del proyecto figure:
+
+`-lgdi32 -mwindows`
+
+`gdi32` contiene las funciones de dibujo usadas por DeutschCoach y `-mwindows` genera la aplicación como programa gráfico de Windows sin consola.
 
 ### Importante
 
-El proyecto debe ser de tipo **Windows Application**, no `Console Application`. De esa manera se abre directamente la ventana gráfica y no aparece una consola negra detrás.
+Abrir solamente `DeutschCoachGUI.cpp` y elegir **Compile** hace que Dev-C++ lo trate como un archivo suelto. Para este programa conviene crear/abrir un **proyecto Windows Application** y compilar el proyecto completo.
 
 DeutschCoachGUI.cpp utiliza únicamente la API nativa de Windows y la biblioteca estándar de C++. No requiere instalar librerías gráficas externas.
 
