@@ -15,7 +15,7 @@
 using namespace std;
 
 // ============================================================
-// DeutschCoach GUI v0.4 - Netzwerk neu A1.1
+// DeutschCoach GUI v0.5 - Netzwerk neu A1.1
 // Windows nativo - Embarcadero Dev-C++ 6.3 / MinGW
 // Requiere enlazar con: -lgdi32 -mwindows
 // ============================================================
@@ -52,7 +52,8 @@ enum Pantalla {
     PANTALLA_PRACTICA_OPCIONES,
     PANTALLA_PRACTICA_TEXTO,
     PANTALLA_CONFIG_VERBOS,
-    PANTALLA_PROGRESO
+    PANTALLA_PROGRESO,
+    PANTALLA_DOMINADAS
 };
 
 enum ModoPractica {
@@ -108,6 +109,9 @@ const int ID_FILTRO_REGULARES = 1411;
 const int ID_FILTRO_IRREGULARES = 1412;
 const int ID_FILTRO_AMBOS = 1413;
 const int ID_INICIAR_VERBOS = 1420;
+const int ID_HOME_ESPANOL = 1501;
+const int ID_DOMINADAS = 1502;
+const int ID_LISTA_DOMINADAS = 1503;
 
 // Paleta
 const COLORREF COLOR_FONDO = RGB(246, 248, 252);
@@ -132,6 +136,11 @@ const COLORREF COLOR_SIDEBAR_TXT = RGB(226, 232, 240);
 const COLORREF COLOR_SIDEBAR_SEL = RGB(55, 65, 81);
 
 HWND ventanaPrincipal = NULL;
+HWND btnHomeEspanol = NULL;
+HWND btnDominadas = NULL;
+HWND listaDominadas = NULL;
+bool soloEspanol = false;
+bool preguntaEspanol = false;
 
 HWND btnNavInicio = NULL;
 HWND btnNavEstudiar = NULL;
@@ -2192,6 +2201,83 @@ bool RespuestaValida(const wstring& entrada, const wstring& alternativas) {
     return false;
 }
 
+vector<wstring> Significados(const wstring& texto) {
+    vector<wstring> partes;
+    wistringstream entrada(texto);
+    wstring parte;
+    while (getline(entrada, parte, L'/')) {
+        size_t nota = parte.find(L'(');
+        if (nota != wstring::npos) parte = parte.substr(0, nota);
+        parte = Normalizar(parte);
+        if (!parte.empty()) partes.push_back(parte);
+    }
+    return partes;
+}
+
+bool CompartenSignificado(const wstring& a, const wstring& b) {
+    vector<wstring> aa = Significados(a), bb = Significados(b);
+    for (const auto& x : aa) for (const auto& y : bb)
+        if (!x.empty() && x == y) return true;
+    return false;
+}
+
+bool RespuestaAlemanValida(const wstring& respuesta, int indice) {
+    if (Normalizar(respuesta).empty()) return false;
+    for (const auto& p : palabras) {
+        if (!CompartenSignificado(p.espanol, palabras[indice].espanol)) continue;
+        if (Normalizar(respuesta) == Normalizar(p.singular)) return true;
+        for (const auto& articulo : Significados(p.articulo))
+            if (Normalizar(respuesta) == Normalizar(articulo + L" " + p.singular)) return true;
+    }
+    return false;
+}
+
+int DistanciaEdicion(const wstring& a, const wstring& b) {
+    vector<int> anterior(b.size() + 1), actual(b.size() + 1);
+    for (size_t j = 0; j <= b.size(); ++j) anterior[j] = (int)j;
+    for (size_t i = 1; i <= a.size(); ++i) {
+        actual[0] = (int)i;
+        for (size_t j = 1; j <= b.size(); ++j)
+            actual[j] = min(min(actual[j-1]+1, anterior[j]+1),
+                            anterior[j-1] + (a[i-1] == b[j-1] ? 0 : 1));
+        anterior.swap(actual);
+    }
+    return anterior[b.size()];
+}
+
+int Parecido(const wstring& a, const wstring& b) {
+    wstring x = Normalizar(a), y = Normalizar(b);
+    int largo = (int)max(x.size(), y.size());
+    if (!largo) return 0;
+    return 100 - 100 * DistanciaEdicion(x, y) / largo;
+}
+
+int PuntajeDistractor(int objetivo, int candidato) {
+    int puntaje = 0;
+    for (const auto& a : Significados(palabras[objetivo].espanol))
+        for (const auto& b : Significados(palabras[candidato].espanol))
+            puntaje = max(puntaje, Parecido(a, b));
+    // Also favour related German word families (Lehrer/Lehrerin, etc.).
+    puntaje = max(puntaje, Parecido(palabras[objetivo].singular,
+                                  palabras[candidato].singular) * 9 / 10);
+    return puntaje;
+}
+
+bool EstaDominada(const Palabra& p) {
+    int total = p.correctas + p.incorrectas;
+    return total >= 3 && p.correctas * 100 / total >= 75;
+}
+
+vector<int> IndicesDominadas() {
+    vector<int> indices;
+    for (size_t i = 0; i < palabras.size(); ++i)
+        if (EstaDominada(palabras[i])) indices.push_back((int)i);
+    sort(indices.begin(), indices.end(), [](int a, int b) {
+        return Normalizar(palabras[a].singular) < Normalizar(palabras[b].singular);
+    });
+    return indices;
+}
+
 bool PalabraDisponible(int indice, ModoPractica modo) {
     if (modo == MODO_PLURALES) return !palabras[indice].plural.empty();
     if (modo == MODO_ARTICULOS) return !palabras[indice].articulo.empty();
@@ -2268,12 +2354,22 @@ double PrecisionGlobal() {
 }
 
 int PalabrasDominadas() {
-    int dominadas = 0;
-    for (size_t i = 0; i < palabras.size(); ++i) {
-        int total = palabras[i].correctas + palabras[i].incorrectas;
-        if (total >= 3 && palabras[i].correctas * 100 / total >= 75) dominadas++;
+    return (int)IndicesDominadas().size();
+}
+
+void ActualizarListaDominadas() {
+    SendMessageW(listaDominadas, LB_RESETCONTENT, 0, 0);
+    for (int indice : IndicesDominadas()) {
+        const Palabra& p = palabras[indice];
+        int total = p.correctas + p.incorrectas;
+        wstring linea = (p.articulo.empty() ? L"" : p.articulo + L" ") + p.singular +
+            L" — " + p.espanol + L"  |  Plural: " + (p.plural.empty() ? L"no se practica" : p.plural) +
+            L"  |  " + to_wstring(p.correctas) + L" aciertos / " + to_wstring(p.incorrectas) +
+            L" errores (" + to_wstring(p.correctas * 100 / total) + L"%)";
+        SendMessageW(listaDominadas, LB_ADDSTRING, 0, (LPARAM)linea.c_str());
     }
-    return dominadas;
+    // Full rows remain accessible even on small windows.
+    SendMessageW(listaDominadas, LB_SETHORIZONTALEXTENT, 2000, 0);
 }
 
 int VerbosPracticados() {
@@ -2385,6 +2481,9 @@ void ActualizarControles() {
     MostrarControl(btnHomeArticulos, inicio);
     MostrarControl(btnHomePlurales, inicio);
     MostrarControl(btnHomeVerbos, inicio);
+    MostrarControl(btnHomeEspanol, inicio);
+    MostrarControl(btnDominadas, pantallaActual == PANTALLA_PROGRESO);
+    MostrarControl(listaDominadas, pantallaActual == PANTALLA_DOMINADAS && PalabrasDominadas() > 0);
 
     for (int i = 0; i < 3; ++i) MostrarControl(btnRespuesta[i], opciones);
     MostrarControl(btnSiguiente, (opciones || texto) && respondida);
@@ -2437,7 +2536,10 @@ void DistribuirControles(HWND hwnd) {
     MoveWindow(btnHomeVocab, x + cardW + cardGap, y1, cardW, 64, TRUE);
     MoveWindow(btnHomeArticulos, x, y2, cardW, 64, TRUE);
     MoveWindow(btnHomePlurales, x + cardW + cardGap, y2, cardW, 64, TRUE);
-    MoveWindow(btnHomeVerbos, x, y3, cardW * 2 + cardGap, 64, TRUE);
+    MoveWindow(btnHomeVerbos, x, y3, cardW, 64, TRUE);
+    MoveWindow(btnHomeEspanol, x + cardW + cardGap, y3, cardW, 64, TRUE);
+    MoveWindow(btnDominadas, x, 555, cardW * 2 + cardGap, 44, TRUE);
+    MoveWindow(listaDominadas, x, 175, anchoContenido - margen * 2, max(120, (int)rc.bottom - 205), TRUE);
 
     int centroX = sidebar + anchoContenido / 2;
     int anchoResp = 180;
@@ -2501,21 +2603,33 @@ int ElegirPalabraDebil() {
 }
 
 vector<wstring> OpcionesVocabulario(int indiceCorrecto) {
-    vector<wstring> opciones;
-    opciones.push_back(palabras[indiceCorrecto].espanol);
-
-    vector<int> indices;
-    for (size_t i = 0; i < palabras.size(); ++i) {
-        if ((int)i != indiceCorrecto && palabras[i].espanol != palabras[indiceCorrecto].espanol)
-            indices.push_back((int)i);
+    vector<wstring> opciones(1, palabras[indiceCorrecto].espanol);
+    // Concrete near-spelling contrast requested for Tennis.
+    if (palabras[indiceCorrecto].singular == L"Tennis") {
+        opciones.push_back(L"tenista");
+        opciones.push_back(L"tesis");
+    } else {
+        vector<pair<int, int> > candidatos;
+        for (size_t i = 0; i < palabras.size(); ++i) {
+            if ((int)i == indiceCorrecto || CompartenSignificado(palabras[i].espanol, opciones[0])) continue;
+            candidatos.push_back(make_pair(PuntajeDistractor(indiceCorrecto, (int)i), (int)i));
+        }
+        shuffle(candidatos.begin(), candidatos.end(), generador);
+        stable_sort(candidatos.begin(), candidatos.end(), [](const pair<int,int>& a, const pair<int,int>& b) {
+            return a.first > b.first;
+        });
+        // Rotate among the closest five instead of unrelated random words.
+        size_t limite = min((size_t)5, candidatos.size());
+        shuffle(candidatos.begin(), candidatos.begin() + limite, generador);
+        for (const auto& c : candidatos) {
+            const wstring& texto = palabras[c.second].espanol;
+            bool ambiguo = false;
+            for (const auto& opcion : opciones)
+                if (CompartenSignificado(texto, opcion)) ambiguo = true;
+            if (!ambiguo) opciones.push_back(texto);
+            if (opciones.size() == 3) break;
+        }
     }
-
-    shuffle(indices.begin(), indices.end(), generador);
-    for (size_t i = 0; i < indices.size() && opciones.size() < 3; ++i) {
-        const wstring& valor = palabras[indices[i]].espanol;
-        if (find(opciones.begin(), opciones.end(), valor) == opciones.end()) opciones.push_back(valor);
-    }
-
     shuffle(opciones.begin(), opciones.end(), generador);
     return opciones;
 }
@@ -2572,7 +2686,10 @@ void PrepararPreguntaTexto() {
     SetWindowTextW(editRespuesta, L"");
     EnableWindow(editRespuesta, TRUE);
 
-    if (modoActual == MODO_PLURALES) {
+    if (preguntaEspanol) {
+        indicePalabraActual = modoActual == MODO_REPASO ? ElegirPalabraDebil() : ElegirPalabraAleatoria();
+        respuestaCorrecta = palabras[indicePalabraActual].singular;
+    } else if (modoActual == MODO_PLURALES) {
         indicePalabraActual = ElegirPalabraAleatoria();
         respuestaCorrecta = palabras[indicePalabraActual].plural;
     } else if (modoActual == MODO_VERBOS) {
@@ -2591,19 +2708,20 @@ void PrepararPreguntaTexto() {
     }
 }
 
-void IniciarPractica(ModoPractica modo) {
+void PrepararSiguientePregunta() {
+    preguntaEspanol = (modoActual == MODO_VOCABULARIO && (soloEspanol || preguntaSesion % 2 == 0)) ||
+                      (modoActual == MODO_REPASO && preguntaSesion % 3 == 0);
+    bool escrita = preguntaEspanol || modoActual == MODO_PLURALES || modoActual == MODO_VERBOS;
+    pantallaActual = escrita ? PANTALLA_PRACTICA_TEXTO : PANTALLA_PRACTICA_OPCIONES;
+    if (escrita) PrepararPreguntaTexto(); else PrepararPreguntaOpciones();
+}
+
+void IniciarPractica(ModoPractica modo, bool escribirAleman = false) {
     modoActual = modo;
+    soloEspanol = escribirAleman;
     preguntaSesion = 1;
     correctasSesion = 0;
-
-    if (modo == MODO_PLURALES || modo == MODO_VERBOS) {
-        pantallaActual = PANTALLA_PRACTICA_TEXTO;
-        PrepararPreguntaTexto();
-    } else {
-        pantallaActual = PANTALLA_PRACTICA_OPCIONES;
-        PrepararPreguntaOpciones();
-    }
-
+    PrepararSiguientePregunta();
     ActualizarControles();
 }
 
@@ -2659,7 +2777,8 @@ void RegistrarRespuestaTexto() {
     GetWindowTextW(editRespuesta, buffer, 512);
     wstring respuesta = Normalizar(buffer);
 
-    bool correcta = RespuestaValida(respuesta, respuestaCorrecta);
+    bool correcta = preguntaEspanol ? RespuestaAlemanValida(respuesta, indicePalabraActual)
+                                   : RespuestaValida(respuesta, respuestaCorrecta);
 
     respondida = true;
     mensajeFeedback = correcta
@@ -2682,11 +2801,7 @@ void SiguientePregunta() {
     }
 
     preguntaSesion++;
-    if (modoActual == MODO_PLURALES || modoActual == MODO_VERBOS) {
-        PrepararPreguntaTexto();
-    } else {
-        PrepararPreguntaOpciones();
-    }
+    PrepararSiguientePregunta();
     ActualizarControles();
 }
 
@@ -2843,8 +2958,8 @@ void DibujarPracticaOpciones(HDC hdc, RECT rc) {
 }
 
 void DibujarPracticaTexto(HDC hdc, RECT rc) {
-    wstring titulo = (modoActual == MODO_PLURALES)
-        ? L"Plurales · respuesta escrita"
+    wstring titulo = preguntaEspanol ? L"Español → alemán · escribir"
+        : modoActual == MODO_PLURALES ? L"Plurales · respuesta escrita"
         : L"Verbos · " + NombreTiempo();
 
     DibujarCabeceraPractica(hdc, rc, titulo);
@@ -2852,7 +2967,14 @@ void DibujarPracticaTexto(HDC hdc, RECT rc) {
     RECT tarjeta = {275, 160, rc.right - 75, 365};
     DibujarRectRedondeado(hdc, tarjeta, COLOR_BLANCO, COLOR_BORDE, 24, 1);
 
-    if (modoActual == MODO_PLURALES) {
+    if (preguntaEspanol) {
+        RECT ins = {tarjeta.left + 18, tarjeta.top + 18, tarjeta.right - 18, tarjeta.top + 50};
+        DibujarTexto(hdc, L"¿Cómo se dice en alemán? Escribí la palabra sin artículo.", ins,
+                     fuenteNormal, COLOR_TEXTO_SUAVE, DT_CENTER | DT_WORDBREAK);
+        RECT palabra = {tarjeta.left + 20, tarjeta.top + 65, tarjeta.right - 20, tarjeta.bottom - 20};
+        DibujarTexto(hdc, palabras[indicePalabraActual].espanol, palabra, fuenteTitulo,
+                     COLOR_TEXTO, DT_CENTER | DT_WORDBREAK);
+    } else if (modoActual == MODO_PLURALES) {
         RECT ins = {tarjeta.left + 20, tarjeta.top + 20, tarjeta.right - 20, tarjeta.top + 50};
         DibujarTexto(hdc, L"Escribí el plural sin artículo", ins, fuenteNormal,
                      COLOR_TEXTO_SUAVE, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -2930,6 +3052,20 @@ void DibujarConfigVerbos(HDC hdc, RECT rc) {
     DibujarRectRedondeado(hdc, box, COLOR_VIOLETA_CLARO, RGB(221, 209, 255), 16, 1);
     DibujarTexto(hdc, resumen, box, fuenteNormal, COLOR_VIOLETA,
                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+void DibujarDominadas(HDC hdc, RECT rc) {
+    RECT titulo = {252, 42, rc.right - 30, 90};
+    DibujarTexto(hdc, L"Palabras dominadas (" + to_wstring(PalabrasDominadas()) + L")",
+                 titulo, fuenteTitulo, COLOR_TEXTO, DT_LEFT | DT_SINGLELINE);
+    RECT ayuda = {252, 96, rc.right - 30, 163};
+    DibujarTexto(hdc, L"Al menos 3 respuestas y 75% de aciertos. Orden alfabético.\nArtículo, traducción, plural y resultados de cada palabra.",
+                 ayuda, fuenteNormal, COLOR_TEXTO_SUAVE, DT_LEFT | DT_WORDBREAK);
+    if (!PalabrasDominadas()) {
+        RECT vacio = {252, 190, rc.right - 35, 290};
+        DibujarTexto(hdc, L"Todavía no hay palabras dominadas.\nPracticá vocabulario, artículos o plurales para sumarlas acá.",
+                     vacio, fuenteSubtitulo, COLOR_TEXTO, DT_LEFT | DT_WORDBREAK);
+    }
 }
 
 void DibujarProgreso(HDC hdc, RECT rc) {
@@ -3037,7 +3173,7 @@ void DibujarBoton(const DRAWITEMSTRUCT* dis) {
         (id == ID_NAV_INICIO && pantallaActual == PANTALLA_INICIO) ||
         (id == ID_NAV_ESTUDIAR && EsPantallaPractica()) ||
         (id == ID_NAV_VERBOS && pantallaActual == PANTALLA_CONFIG_VERBOS) ||
-        (id == ID_NAV_PROGRESO && pantallaActual == PANTALLA_PROGRESO);
+        (id == ID_NAV_PROGRESO && (pantallaActual == PANTALLA_PROGRESO || pantallaActual == PANTALLA_DOMINADAS));
 
     if (id >= ID_NAV_INICIO && id <= ID_NAV_PROGRESO) {
         fondo = navSeleccionado ? COLOR_SIDEBAR_SEL : COLOR_SIDEBAR;
@@ -3146,10 +3282,16 @@ LRESULT CALLBACK ProcedimientoVentana(HWND hwnd, UINT mensaje, WPARAM wParam, LP
             btnNavProgreso = CrearBoton(hwnd, ID_NAV_PROGRESO, L"Progreso");
 
             btnHomeRepaso = CrearBoton(hwnd, ID_HOME_REPASO, L"Repaso inteligente");
-            btnHomeVocab = CrearBoton(hwnd, ID_HOME_VOCAB, L"Vocabulario");
+            btnHomeVocab = CrearBoton(hwnd, ID_HOME_VOCAB, L"Vocabulario · mixto");
+            btnHomeEspanol = CrearBoton(hwnd, ID_HOME_ESPANOL, L"Español → alemán");
+            btnDominadas = CrearBoton(hwnd, ID_DOMINADAS, L"Ver palabras dominadas");
+            listaDominadas = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
+                WS_CHILD | WS_TABSTOP | WS_VSCROLL | WS_HSCROLL | LBS_NOINTEGRALHEIGHT,
+                0, 0, 100, 100, hwnd, (HMENU)(INT_PTR)ID_LISTA_DOMINADAS, GetModuleHandleW(NULL), NULL);
+            SendMessageW(listaDominadas, WM_SETFONT, (WPARAM)fuenteNormal, TRUE);
             btnHomeArticulos = CrearBoton(hwnd, ID_HOME_ARTICULOS, L"Artículos");
             btnHomePlurales = CrearBoton(hwnd, ID_HOME_PLURALES, L"Plurales · escribir");
-            btnHomeVerbos = CrearBoton(hwnd, ID_HOME_VERBOS, L"Verbos · configurar y escribir");
+            btnHomeVerbos = CrearBoton(hwnd, ID_HOME_VERBOS, L"Verbos · escribir");
 
             btnRespuesta[0] = CrearBoton(hwnd, ID_RESPUESTA_1, L"der");
             btnRespuesta[1] = CrearBoton(hwnd, ID_RESPUESTA_2, L"die");
@@ -3210,6 +3352,16 @@ LRESULT CALLBACK ProcedimientoVentana(HWND hwnd, UINT mensaje, WPARAM wParam, LP
 
                 case ID_HOME_VOCAB:
                     IniciarPractica(MODO_VOCABULARIO);
+                    break;
+
+                case ID_HOME_ESPANOL:
+                    IniciarPractica(MODO_VOCABULARIO, true);
+                    break;
+
+                case ID_DOMINADAS:
+                    ActualizarListaDominadas();
+                    pantallaActual = PANTALLA_DOMINADAS;
+                    ActualizarControles();
                     break;
 
                 case ID_HOME_ARTICULOS:
@@ -3328,6 +3480,8 @@ LRESULT CALLBACK ProcedimientoVentana(HWND hwnd, UINT mensaje, WPARAM wParam, LP
                 DibujarPracticaTexto(hdc, rc);
             } else if (pantallaActual == PANTALLA_CONFIG_VERBOS) {
                 DibujarConfigVerbos(hdc, rc);
+            } else if (pantallaActual == PANTALLA_DOMINADAS) {
+                DibujarDominadas(hdc, rc);
             } else {
                 DibujarProgreso(hdc, rc);
             }
