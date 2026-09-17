@@ -2265,7 +2265,34 @@ int PuntajeDistractor(int objetivo, int candidato) {
 
 bool EstaDominada(const Palabra& p) {
     int total = p.correctas + p.incorrectas;
-    return total >= 3 && p.correctas * 100 / total >= 75;
+    return p.correctas - p.incorrectas >= 15 ||
+           (total >= 3 && p.correctas * 100 / total >= 75);
+}
+
+// Minimum additional correct answers with no new errors, via either rule.
+int AciertosParaDominar(const Palabra& p) {
+    int porPorcentaje = max(0, max(3 - p.correctas - p.incorrectas,
+                                 3 * p.incorrectas - p.correctas));
+    int porVentaja = max(0, 15 - p.correctas + p.incorrectas);
+    return min(porPorcentaje, porVentaja);
+}
+
+bool EstaCercaDeDominar(const Palabra& p) {
+    return p.correctas + p.incorrectas > 0 && !EstaDominada(p) &&
+           AciertosParaDominar(p) <= 3;
+}
+
+vector<int> IndicesCercanas() {
+    vector<int> indices;
+    for (size_t i = 0; i < palabras.size(); ++i)
+        if (EstaCercaDeDominar(palabras[i])) indices.push_back((int)i);
+    sort(indices.begin(), indices.end(), [](int a, int b) {
+        int faltanA = AciertosParaDominar(palabras[a]);
+        int faltanB = AciertosParaDominar(palabras[b]);
+        if (faltanA != faltanB) return faltanA < faltanB;
+        return Normalizar(palabras[a].singular) < Normalizar(palabras[b].singular);
+    });
+    return indices;
 }
 
 vector<int> IndicesDominadas() {
@@ -2359,10 +2386,17 @@ int PalabrasDominadas() {
 
 void ActualizarListaDominadas() {
     SendMessageW(listaDominadas, LB_RESETCONTENT, 0, 0);
-    for (int indice : IndicesDominadas()) {
+    vector<int> indices = IndicesDominadas();
+    vector<int> cercanas = IndicesCercanas();
+    indices.insert(indices.end(), cercanas.begin(), cercanas.end());
+    for (int indice : indices) {
         const Palabra& p = palabras[indice];
         int total = p.correctas + p.incorrectas;
-        wstring linea = (p.articulo.empty() ? L"" : p.articulo + L" ") + p.singular +
+        int faltan = AciertosParaDominar(p);
+        wstring estado = EstaDominada(p) ? L"[DOMINADA] " :
+            L"[CERCA: " + to_wstring(faltan) +
+            (faltan == 1 ? L" acierto más] " : L" aciertos seguidos más] ");
+        wstring linea = estado + (p.articulo.empty() ? L"" : p.articulo + L" ") + p.singular +
             L" — " + p.espanol + L"  |  Plural: " + (p.plural.empty() ? L"no se practica" : p.plural) +
             L"  |  " + to_wstring(p.correctas) + L" aciertos / " + to_wstring(p.incorrectas) +
             L" errores (" + to_wstring(p.correctas * 100 / total) + L"%)";
@@ -2483,7 +2517,7 @@ void ActualizarControles() {
     MostrarControl(btnHomeVerbos, inicio);
     MostrarControl(btnHomeEspanol, inicio);
     MostrarControl(btnDominadas, pantallaActual == PANTALLA_PROGRESO);
-    MostrarControl(listaDominadas, pantallaActual == PANTALLA_DOMINADAS && PalabrasDominadas() > 0);
+    MostrarControl(listaDominadas, pantallaActual == PANTALLA_DOMINADAS && (PalabrasDominadas() > 0 || !IndicesCercanas().empty()));
 
     for (int i = 0; i < 3; ++i) MostrarControl(btnRespuesta[i], opciones);
     MostrarControl(btnSiguiente, (opciones || texto) && respondida);
@@ -2539,7 +2573,7 @@ void DistribuirControles(HWND hwnd) {
     MoveWindow(btnHomeVerbos, x, y3, cardW, 64, TRUE);
     MoveWindow(btnHomeEspanol, x + cardW + cardGap, y3, cardW, 64, TRUE);
     MoveWindow(btnDominadas, x, 555, cardW * 2 + cardGap, 44, TRUE);
-    MoveWindow(listaDominadas, x, 175, anchoContenido - margen * 2, max(120, (int)rc.bottom - 205), TRUE);
+    MoveWindow(listaDominadas, x, 200, anchoContenido - margen * 2, max(120, (int)rc.bottom - 230), TRUE);
 
     int centroX = sidebar + anchoContenido / 2;
     int anchoResp = 180;
@@ -3056,14 +3090,17 @@ void DibujarConfigVerbos(HDC hdc, RECT rc) {
 
 void DibujarDominadas(HDC hdc, RECT rc) {
     RECT titulo = {252, 42, rc.right - 30, 90};
-    DibujarTexto(hdc, L"Palabras dominadas (" + to_wstring(PalabrasDominadas()) + L")",
-                 titulo, fuenteTitulo, COLOR_TEXTO, DT_LEFT | DT_SINGLELINE);
-    RECT ayuda = {252, 96, rc.right - 30, 163};
-    DibujarTexto(hdc, L"Al menos 3 respuestas y 75% de aciertos. Orden alfabético.\nArtículo, traducción, plural y resultados de cada palabra.",
-                 ayuda, fuenteNormal, COLOR_TEXTO_SUAVE, DT_LEFT | DT_WORDBREAK);
-    if (!PalabrasDominadas()) {
-        RECT vacio = {252, 190, rc.right - 35, 290};
-        DibujarTexto(hdc, L"Todavía no hay palabras dominadas.\nPracticá vocabulario, artículos o plurales para sumarlas acá.",
+    DibujarTexto(hdc, L"Dominadas y cercanas", titulo, fuenteTitulo, COLOR_TEXTO, DT_LEFT | DT_SINGLELINE);
+    RECT resumen = {252, 94, rc.right - 30, 120};
+    DibujarTexto(hdc, to_wstring(PalabrasDominadas()) + L" dominadas · " +
+                 to_wstring(IndicesCercanas().size()) + L" cercanas", resumen,
+                 fuenteSubtitulo, COLOR_AZUL, DT_LEFT | DT_SINGLELINE);
+    RECT ayuda = {252, 127, rc.right - 30, 193};
+    DibujarTexto(hdc, L"Dominada: 3 respuestas o más con 75% de aciertos,\no 15 aciertos más que errores, sin importar el porcentaje.\nCercana: ya practicada y a un máximo de 3 aciertos seguidos de dominarse.",
+                 ayuda, fuentePequena, COLOR_TEXTO_SUAVE, DT_LEFT | DT_WORDBREAK);
+    if (!PalabrasDominadas() && IndicesCercanas().empty()) {
+        RECT vacio = {252, 210, rc.right - 35, 310};
+        DibujarTexto(hdc, L"Todavía no hay palabras dominadas ni cercanas.\nPracticá vocabulario, artículos o plurales para sumarlas acá.",
                      vacio, fuenteSubtitulo, COLOR_TEXTO, DT_LEFT | DT_WORDBREAK);
     }
 }
@@ -3284,7 +3321,7 @@ LRESULT CALLBACK ProcedimientoVentana(HWND hwnd, UINT mensaje, WPARAM wParam, LP
             btnHomeRepaso = CrearBoton(hwnd, ID_HOME_REPASO, L"Repaso inteligente");
             btnHomeVocab = CrearBoton(hwnd, ID_HOME_VOCAB, L"Vocabulario · mixto");
             btnHomeEspanol = CrearBoton(hwnd, ID_HOME_ESPANOL, L"Español → alemán");
-            btnDominadas = CrearBoton(hwnd, ID_DOMINADAS, L"Ver palabras dominadas");
+            btnDominadas = CrearBoton(hwnd, ID_DOMINADAS, L"Ver dominadas y cercanas");
             listaDominadas = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
                 WS_CHILD | WS_TABSTOP | WS_VSCROLL | WS_HSCROLL | LBS_NOINTEGRALHEIGHT,
                 0, 0, 100, 100, hwnd, (HMENU)(INT_PTR)ID_LISTA_DOMINADAS, GetModuleHandleW(NULL), NULL);
