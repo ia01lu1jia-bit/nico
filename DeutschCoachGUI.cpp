@@ -3602,14 +3602,14 @@ LRESULT CALLBACK ProcedimientoVentana(HWND hwnd, UINT mensaje, WPARAM wParam, LP
 
         case WM_DRAWITEM: {
             DRAWITEMSTRUCT* dis = (DRAWITEMSTRUCT*)lParam;
-            if (dis->CtlType == ODT_LIST) DibujarFilaDominadas(dis);
+            if (dis->CtlType == ODT_LISTBOX) DibujarFilaDominadas(dis);
             else DibujarBoton(dis);
             return TRUE;
         }
 
         case WM_MEASUREITEM: {
             MEASUREITEMSTRUCT* mis = (MEASUREITEMSTRUCT*)lParam;
-            if (mis->CtlType == ODT_LIST) {
+            if (mis->CtlType == ODT_LISTBOX) {
                 mis->itemHeight = 58;
                 return TRUE;
             }
