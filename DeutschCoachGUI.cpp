@@ -2265,7 +2265,7 @@ int PuntajeDistractor(int objetivo, int candidato) {
 
 bool EstaDominada(const Palabra& p) {
     int total = p.correctas + p.incorrectas;
-    return p.correctas - p.incorrectas >= 15 ||
+    return p.correctas - p.incorrectas >= 10 ||
            (total >= 3 && p.correctas * 100 / total >= 75);
 }
 
@@ -2273,7 +2273,7 @@ bool EstaDominada(const Palabra& p) {
 int AciertosParaDominar(const Palabra& p) {
     int porPorcentaje = max(0, max(3 - p.correctas - p.incorrectas,
                                  3 * p.incorrectas - p.correctas));
-    int porVentaja = max(0, 15 - p.correctas + p.incorrectas);
+    int porVentaja = max(0, 10 - p.correctas + p.incorrectas);
     return min(porPorcentaje, porVentaja);
 }
 
@@ -2384,26 +2384,45 @@ int PalabrasDominadas() {
     return (int)IndicesDominadas().size();
 }
 
+void AgregarFilaDominadas(const wstring& texto) {
+    SendMessageW(listaDominadas, LB_ADDSTRING, 0, (LPARAM)texto.c_str());
+}
+
 void ActualizarListaDominadas() {
     SendMessageW(listaDominadas, LB_RESETCONTENT, 0, 0);
-    vector<int> indices = IndicesDominadas();
+    vector<int> dominadas = IndicesDominadas();
     vector<int> cercanas = IndicesCercanas();
-    indices.insert(indices.end(), cercanas.begin(), cercanas.end());
-    for (int indice : indices) {
-        const Palabra& p = palabras[indice];
-        int total = p.correctas + p.incorrectas;
-        int faltan = AciertosParaDominar(p);
-        wstring estado = EstaDominada(p) ? L"[DOMINADA] " :
-            L"[CERCA: " + to_wstring(faltan) +
-            (faltan == 1 ? L" acierto más] " : L" aciertos seguidos más] ");
-        wstring linea = estado + (p.articulo.empty() ? L"" : p.articulo + L" ") + p.singular +
-            L" — " + p.espanol + L"  |  Plural: " + (p.plural.empty() ? L"no se practica" : p.plural) +
-            L"  |  " + to_wstring(p.correctas) + L" aciertos / " + to_wstring(p.incorrectas) +
-            L" errores (" + to_wstring(p.correctas * 100 / total) + L"%)";
-        SendMessageW(listaDominadas, LB_ADDSTRING, 0, (LPARAM)linea.c_str());
+
+    if (!dominadas.empty()) {
+        AgregarFilaDominadas(L"[SECCION] DOMINADAS");
+        for (int indice : dominadas) {
+            const Palabra& p = palabras[indice];
+            int total = p.correctas + p.incorrectas;
+            int porcentaje = total > 0 ? p.correctas * 100 / total : 0;
+            wstring linea = L"[DOMINADA] " + (p.articulo.empty() ? L"" : p.articulo + L" ") + p.singular +
+                L" — " + p.espanol + L"  |  Plural: " + (p.plural.empty() ? L"no se practica" : p.plural) +
+                L"  |  " + to_wstring(p.correctas) + L" aciertos / " + to_wstring(p.incorrectas) +
+                L" errores (" + to_wstring(porcentaje) + L"%)";
+            AgregarFilaDominadas(linea);
+        }
     }
-    // Full rows remain accessible even on small windows.
-    SendMessageW(listaDominadas, LB_SETHORIZONTALEXTENT, 2000, 0);
+
+    if (!cercanas.empty()) {
+        AgregarFilaDominadas(L"[SECCION] CERCA DE DOMINAR");
+        for (int indice : cercanas) {
+            const Palabra& p = palabras[indice];
+            int total = p.correctas + p.incorrectas;
+            int porcentaje = total > 0 ? p.correctas * 100 / total : 0;
+            int faltan = AciertosParaDominar(p);
+            wstring linea = L"[CERCA] " + (p.articulo.empty() ? L"" : p.articulo + L" ") + p.singular +
+                L" — " + p.espanol + L"  |  Plural: " + (p.plural.empty() ? L"no se practica" : p.plural) +
+                L"  |  faltan " + to_wstring(faltan) +
+                (faltan == 1 ? L" acierto" : L" aciertos") + L"  ·  " +
+                to_wstring(p.correctas) + L" / " + to_wstring(p.incorrectas) +
+                L" (" + to_wstring(porcentaje) + L"%)";
+            AgregarFilaDominadas(linea);
+        }
+    }
 }
 
 int VerbosPracticados() {
@@ -2573,7 +2592,7 @@ void DistribuirControles(HWND hwnd) {
     MoveWindow(btnHomeVerbos, x, y3, cardW, 64, TRUE);
     MoveWindow(btnHomeEspanol, x + cardW + cardGap, y3, cardW, 64, TRUE);
     MoveWindow(btnDominadas, x, 555, cardW * 2 + cardGap, 44, TRUE);
-    MoveWindow(listaDominadas, x, 200, anchoContenido - margen * 2, max(120, (int)rc.bottom - 230), TRUE);
+    MoveWindow(listaDominadas, x, 394, anchoContenido - margen * 2, max(120, (int)rc.bottom - 414), TRUE);
 
     int centroX = sidebar + anchoContenido / 2;
     int anchoResp = 180;
@@ -3089,19 +3108,73 @@ void DibujarConfigVerbos(HDC hdc, RECT rc) {
 }
 
 void DibujarDominadas(HDC hdc, RECT rc) {
-    RECT titulo = {252, 42, rc.right - 30, 90};
-    DibujarTexto(hdc, L"Dominadas y cercanas", titulo, fuenteTitulo, COLOR_TEXTO, DT_LEFT | DT_SINGLELINE);
-    RECT resumen = {252, 94, rc.right - 30, 120};
-    DibujarTexto(hdc, to_wstring(PalabrasDominadas()) + L" dominadas · " +
-                 to_wstring(IndicesCercanas().size()) + L" cercanas", resumen,
-                 fuenteSubtitulo, COLOR_AZUL, DT_LEFT | DT_SINGLELINE);
-    RECT ayuda = {252, 127, rc.right - 30, 193};
-    DibujarTexto(hdc, L"Dominada: 3 respuestas o más con 75% de aciertos,\no 15 aciertos más que errores, sin importar el porcentaje.\nCercana: ya practicada y a un máximo de 3 aciertos seguidos de dominarse.",
-                 ayuda, fuentePequena, COLOR_TEXTO_SUAVE, DT_LEFT | DT_WORDBREAK);
-    if (!PalabrasDominadas() && IndicesCercanas().empty()) {
-        RECT vacio = {252, 210, rc.right - 35, 310};
-        DibujarTexto(hdc, L"Todavía no hay palabras dominadas ni cercanas.\nPracticá vocabulario, artículos o plurales para sumarlas acá.",
-                     vacio, fuenteSubtitulo, COLOR_TEXTO, DT_LEFT | DT_WORDBREAK);
+    const int x = 252;
+    const int derecha = rc.right - 45;
+    const int ancho = derecha - x;
+    const int gap = 16;
+
+    RECT titulo = {x, 34, derecha, 78};
+    DibujarTexto(hdc, L"Mi biblioteca de progreso", titulo, fuenteTitulo,
+                 COLOR_TEXTO, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT subtitulo = {x, 82, derecha, 116};
+    DibujarTexto(hdc, L"Revisá lo que ya aprendiste y lo que está a pocos aciertos de quedar dominado.",
+                 subtitulo, fuenteNormal, COLOR_TEXTO_SUAVE,
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    int tarjetaW = (ancho - gap) / 2;
+    RECT dominadas = {x, 140, x + tarjetaW, 250};
+    RECT cercanas = {x + tarjetaW + gap, 140, derecha, 250};
+    DibujarRectRedondeado(hdc, dominadas, COLOR_VERDE_CLARO, RGB(201, 235, 207), 22, 1);
+    DibujarRectRedondeado(hdc, cercanas, COLOR_NARANJA_CLARO, RGB(247, 218, 174), 22, 1);
+
+    RECT barraVerde = {dominadas.left, dominadas.top, dominadas.left + 9, dominadas.bottom};
+    RECT barraNaranja = {cercanas.left, cercanas.top, cercanas.left + 9, cercanas.bottom};
+    HBRUSH bv = CreateSolidBrush(COLOR_VERDE); FillRect(hdc, &barraVerde, bv); DeleteObject(bv);
+    HBRUSH bn = CreateSolidBrush(COLOR_NARANJA); FillRect(hdc, &barraNaranja, bn); DeleteObject(bn);
+
+    RECT dLabel = {dominadas.left + 27, dominadas.top + 15, dominadas.right - 20, dominadas.top + 42};
+    DibujarTexto(hdc, L"PALABRAS DOMINADAS", dLabel, fuentePequena, COLOR_VERDE_OSCURO,
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT dNum = {dominadas.left + 27, dominadas.top + 37, dominadas.right - 20, dominadas.top + 87};
+    DibujarTexto(hdc, to_wstring(PalabrasDominadas()), dNum, fuenteTitulo, COLOR_VERDE_OSCURO,
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT dHint = {dominadas.left + 112, dominadas.top + 55, dominadas.right - 20, dominadas.top + 87};
+    DibujarTexto(hdc, L"listas para repasar", dHint, fuentePequena, COLOR_TEXTO_SUAVE,
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    RECT cLabel = {cercanas.left + 27, cercanas.top + 15, cercanas.right - 20, cercanas.top + 42};
+    DibujarTexto(hdc, L"CERCA DE DOMINAR", cLabel, fuentePequena, RGB(193, 117, 22),
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT cNum = {cercanas.left + 27, cercanas.top + 37, cercanas.right - 20, cercanas.top + 87};
+    DibujarTexto(hdc, to_wstring(IndicesCercanas().size()), cNum, fuenteTitulo, RGB(193, 117, 22),
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT cHint = {cercanas.left + 112, cercanas.top + 55, cercanas.right - 20, cercanas.top + 87};
+    DibujarTexto(hdc, L"a pocos aciertos", cHint, fuentePequena, COLOR_TEXTO_SUAVE,
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    RECT regla = {x, 270, derecha, 344};
+    DibujarRectRedondeado(hdc, regla, COLOR_BLANCO, COLOR_BORDE, 18, 1);
+    RECT reglaMarca = {regla.left, regla.top, regla.left + 6, regla.bottom};
+    HBRUSH rm = CreateSolidBrush(COLOR_AZUL); FillRect(hdc, &reglaMarca, rm); DeleteObject(rm);
+    RECT reglaTitulo = {regla.left + 22, regla.top + 12, regla.right - 20, regla.top + 36};
+    DibujarTexto(hdc, L"¿Cuándo se domina una palabra?", reglaTitulo, fuenteSubtitulo, COLOR_TEXTO,
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT reglaTexto = {regla.left + 22, regla.top + 39, regla.right - 20, regla.bottom - 9};
+    DibujarTexto(hdc, L"Con 3 respuestas y al menos 75% de aciertos, o cuando los aciertos superan a los errores por 10. El porcentaje deja de importar en ese segundo caso.",
+                 reglaTexto, fuentePequena, COLOR_TEXTO_SUAVE, DT_LEFT | DT_WORDBREAK);
+
+    RECT listado = {x, 360, derecha, 390};
+    DibujarTexto(hdc, L"Tu recorrido", listado, fuenteSubtitulo, COLOR_TEXTO,
+                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    if (PalabrasDominadas() == 0 && IndicesCercanas().empty()) {
+        RECT vacio = {x, 400, derecha, 585};
+        DibujarRectRedondeado(hdc, vacio, COLOR_BLANCO, COLOR_BORDE, 20, 1);
+        RECT icono = {x + 28, 434, x + 88, 494};
+        HBRUSH hi = CreateSolidBrush(COLOR_AZUL_CLARO); FillRect(hdc, &icono, hi); DeleteObject(hi);
+        DibujarTexto(hdc, L"✓", icono, fuenteTitulo, COLOR_AZUL, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        RECT mensaje = {x + 112, 425, derecha - 25, 530};
+        DibujarTexto(hdc, L"Todavía no hay palabras en esta sección.\nPracticá un poco más y tus avances van a aparecer acá.",
+                     mensaje, fuenteSubtitulo, COLOR_TEXTO, DT_LEFT | DT_WORDBREAK);
     }
 }
 
@@ -3191,6 +3264,44 @@ bool BotonSeleccionadoPorEstado(int id) {
     return false;
 }
 
+void DibujarFilaDominadas(const DRAWITEMSTRUCT* dis) {
+    if (dis->itemID == (UINT)-1) return;
+    wchar_t texto[1024] = L"";
+    SendMessageW(dis->hwndItem, LB_GETTEXT, dis->itemID, (LPARAM)texto);
+    wstring fila = texto;
+    RECT rc = dis->rcItem;
+    bool seccion = fila.find(L"[SECCION]") == 0;
+    bool dominada = fila.find(L"[SECCION] DOMINADAS") == 0 || fila.find(L"[DOMINADA]") == 0;
+    bool seleccionada = (dis->itemState & ODS_SELECTED) != 0;
+
+    COLORREF fondo = seccion ? (dominada ? COLOR_VERDE_CLARO : COLOR_NARANJA_CLARO)
+                             : ((dis->itemID % 2) ? RGB(250, 251, 254) : COLOR_BLANCO);
+    COLORREF textoColor = seccion ? (dominada ? COLOR_VERDE_OSCURO : RGB(193, 117, 22)) : COLOR_TEXTO;
+    COLORREF marca = dominada ? COLOR_VERDE : COLOR_NARANJA;
+    if (seleccionada && !seccion) fondo = COLOR_AZUL_CLARO;
+
+    HBRUSH brocha = CreateSolidBrush(fondo);
+    FillRect(dis->hDC, &rc, brocha);
+    DeleteObject(brocha);
+
+    RECT marcaRc = {rc.left, rc.top, rc.left + (seccion ? 7 : 4), rc.bottom};
+    HBRUSH bm = CreateSolidBrush(seccion ? marca : (seleccionada ? COLOR_AZUL : marca));
+    FillRect(dis->hDC, &marcaRc, bm);
+    DeleteObject(bm);
+
+    RECT textoRc = rc;
+    textoRc.left += seccion ? 18 : 16;
+    textoRc.right -= 12;
+    textoRc.top += seccion ? 14 : 8;
+    textoRc.bottom -= seccion ? 10 : 7;
+    HFONT fuente = seccion ? fuenteBoton : fuentePequena;
+    wstring visible = fila;
+    if (!seccion && visible.find(L"[DOMINADA] ") == 0) visible.erase(0, 11);
+    if (!seccion && visible.find(L"[CERCA] ") == 0) visible.erase(0, 8);
+    DibujarTexto(dis->hDC, seccion ? (dominada ? L"DOMINADAS" : L"CERCA DE DOMINAR") : visible,
+                 textoRc, fuente, textoColor, DT_LEFT | DT_VCENTER | (seccion ? DT_SINGLELINE : DT_WORDBREAK));
+}
+
 void DibujarBoton(const DRAWITEMSTRUCT* dis) {
     int id = (int)GetWindowLongPtr(dis->hwndItem, GWLP_ID);
 
@@ -3239,6 +3350,12 @@ void DibujarBoton(const DRAWITEMSTRUCT* dis) {
         borde = COLOR_VIOLETA;
         textoColor = COLOR_VIOLETA;
         fondo = presionado ? COLOR_VIOLETA_CLARO : COLOR_BLANCO;
+    }
+
+    if (id == ID_DOMINADAS) {
+        fondo = presionado ? COLOR_AZUL_CLARO : COLOR_BLANCO;
+        borde = COLOR_AZUL;
+        textoColor = COLOR_AZUL;
     }
 
     if (id == ID_COMPROBAR || id == ID_SIGUIENTE || id == ID_INICIAR_VERBOS) {
@@ -3323,7 +3440,7 @@ LRESULT CALLBACK ProcedimientoVentana(HWND hwnd, UINT mensaje, WPARAM wParam, LP
             btnHomeEspanol = CrearBoton(hwnd, ID_HOME_ESPANOL, L"Español → alemán");
             btnDominadas = CrearBoton(hwnd, ID_DOMINADAS, L"Ver dominadas y cercanas");
             listaDominadas = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"",
-                WS_CHILD | WS_TABSTOP | WS_VSCROLL | WS_HSCROLL | LBS_NOINTEGRALHEIGHT,
+                WS_CHILD | WS_TABSTOP | WS_VSCROLL | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT,
                 0, 0, 100, 100, hwnd, (HMENU)(INT_PTR)ID_LISTA_DOMINADAS, GetModuleHandleW(NULL), NULL);
             SendMessageW(listaDominadas, WM_SETFONT, (WPARAM)fuenteNormal, TRUE);
             btnHomeArticulos = CrearBoton(hwnd, ID_HOME_ARTICULOS, L"Artículos");
@@ -3483,9 +3600,21 @@ LRESULT CALLBACK ProcedimientoVentana(HWND hwnd, UINT mensaje, WPARAM wParam, LP
             return (LRESULT)brushEdit;
         }
 
-        case WM_DRAWITEM:
-            DibujarBoton((DRAWITEMSTRUCT*)lParam);
+        case WM_DRAWITEM: {
+            DRAWITEMSTRUCT* dis = (DRAWITEMSTRUCT*)lParam;
+            if (dis->CtlType == ODT_LIST) DibujarFilaDominadas(dis);
+            else DibujarBoton(dis);
             return TRUE;
+        }
+
+        case WM_MEASUREITEM: {
+            MEASUREITEMSTRUCT* mis = (MEASUREITEMSTRUCT*)lParam;
+            if (mis->CtlType == ODT_LIST) {
+                mis->itemHeight = 58;
+                return TRUE;
+            }
+            break;
+        }
 
         case WM_GETMINMAXINFO: {
             MINMAXINFO* mmi = (MINMAXINFO*)lParam;
